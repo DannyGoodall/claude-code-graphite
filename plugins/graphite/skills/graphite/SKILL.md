@@ -235,3 +235,59 @@ gt sync                                    # Pull, restack, clean
 # Resolve any conflicts if prompted
 gt continue -a                             # After resolving
 ```
+
+## Multi-Agent Orchestration
+
+When work is parallelized across multiple agents (subagents, background agents,
+or separate Claude Code sessions), the single-actor assumptions above break:
+restacks rewrite refs across the whole stack, `gt create -am`/`gt modify -a`
+stage *everything* in a shared checkout, and Graphite's metadata cache is
+shared across all worktrees. Multi-agent work therefore uses two explicit roles.
+
+For the full protocol (lifecycle, hazards, manifest format, relay pattern),
+see `references/multi-agent.md`.
+
+### Roles
+
+| Role | Where it runs | Owns |
+|------|---------------|------|
+| **Orchestrator** | Primary checkout (main session) | Stack topology, `gt sync`/`gt restack`, conflict resolution, final submit, worktree lifecycle, the agent plan manifest |
+| **Worker** | Linked git worktree (one per agent) | Exactly one branch: its commits and content |
+
+The SessionStart hook detects the role automatically (linked worktree = worker)
+and the `gt-guard.sh` PreToolUse hook enforces the matrix below.
+
+### Command Ownership
+
+| Command | Orchestrator | Worker |
+|---------|--------------|--------|
+| `gt sync`, `gt restack` | ✅ (only after worktrees are pruned) | ❌ never |
+| `gt move`, `gt fold`, `gt reorder`, `gt split`, `gt absorb`, `gt delete` | ✅ | ❌ |
+| `gt submit --stack` / `gt ss` | ✅ | ❌ |
+| `gt create -am` | ✅ (pre-creating slice branches) | ⚠️ only if the orchestrator did not pre-create the branch |
+| `git commit` / `gt modify -a` on own branch | — | ✅ |
+| `gt submit --no-interactive` (own sibling branch) | ✅ | ✅ |
+| `gt log`, `gt ls`, `gt info` (read-only) | ✅ | ✅ |
+
+### Topology Rules
+
+- **Parallel workers ⇒ sibling branches off trunk**, one worktree each.
+  Siblings share no refs, so workers cannot invalidate each other.
+- **Never split a dependent stack across concurrent workers.** A stack is an
+  ordering; dependent slices are relayed sequentially (worker B starts only
+  after worker A's branch is final, branching from it).
+- A worker that discovers a dependency on another slice **stops and reports**;
+  it never runs `gt move` itself.
+- Siblings can be stitched into a stack *after* reconvening, with
+  `gt move --onto`.
+
+### Reconvene Checklist (Orchestrator)
+
+Run in this order — the prune-before-restack ordering is a hard rule, because
+a restack physically cannot rewrite a branch checked out in another worktree:
+
+1. Collect worker reports (branch, commits, submitted?, blockers)
+2. `git worktree remove -f -f <path>` for each agent worktree, then `git worktree prune`
+3. `gt sync` — resolve conflicts per `references/conflict-resolution.md`
+4. Optionally stitch siblings into a stack: `gt move --onto <branch>`
+5. `gt submit --stack --no-interactive`

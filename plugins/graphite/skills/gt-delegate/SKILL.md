@@ -48,6 +48,12 @@ git worktree add <worktree> -b <branch> <trunk>
 gt track <branch> --parent <trunk>
 ```
 
+**Seed the workload's inputs onto the branch.** A fresh worktree contains only
+committed files — anything the workload needs that is untracked or uncommitted
+in the primary checkout (spec folders, fixtures, config) will NOT exist in the
+worker's worktree. Copy it in and commit it as the branch's first commit
+before dispatching.
+
 Write the manifest `.git/gt-agent-plan.json` with this one slice (format in
 `references/multi-agent.md`).
 
@@ -66,7 +72,21 @@ include:
 - the structured JSON report requirement (the agent definition carries the
   format).
 
-`run_in_background: true` when the user wants to keep working; otherwise wait.
+**Dispatch in the background by default** (`run_in_background: true`): the
+orchestrator returns control to the user immediately and reconvenes when the
+worker's completion notification arrives. While a background worker runs, the
+user can issue further commands — including provisioning and dispatching more
+workers on sibling branches (provisioning always serializes through the
+orchestrator; the workers themselves run concurrently).
+
+Dispatch in the FOREGROUND only when the user explicitly asks to wait, or for
+a deliberate validation run (e.g. first use of a new workload shape, where
+fail-fast matters more than keeping the session free). Warn the user first: a
+foreground worker blocks the orchestrator's main loop until it reports — the
+terminal accepts no input, and the worker's tool activity renders inline in
+the session, which can look as if the orchestrator is doing the implementation
+itself. It is not; all work happens in the worker's worktree under the worker
+contract.
 
 ## 5. Reconvene (strict order)
 
@@ -89,10 +109,15 @@ include:
 
 ## Variants
 
+- **Foreground** ("wait for it", "watch it run"): see the dispatch note above
+  — blocks the session until the worker reports.
 - **Relay** (dependent follow-up slice): after reconvening slice 1, provision
   slice 2 parented on slice 1's branch (`git worktree add ../wt-2 -b
   <branch2> <branch1>; gt track <branch2> --parent <branch1>`) and dispatch
   the next worker. Never run dependent slices concurrently.
 - **Parallel siblings**: more than one independent workload → this is the full
   fan-out; follow `references/multi-agent.md` directly rather than looping
-  this skill.
+  this skill. Invoking gt-delegate again while a background worker runs is
+  fine for INDEPENDENT slices: provision the new sibling branch + worktree,
+  add it to the manifest, dispatch. Reconvene each worker as it reports, but
+  hold the shared `gt sync` until ALL worktrees are pruned.

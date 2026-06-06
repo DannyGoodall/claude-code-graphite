@@ -301,10 +301,26 @@ argument, else the conversation, else `openspec list --json`; the branch and
 worktree names are derived from the change name and surfaced in the
 confirmation step.
 
+### Foreground vs background dispatch
+
+Background is the **default**: the worker is dispatched with
+`run_in_background`, the orchestrator session returns control immediately, and
+reconvene happens when the worker's completion notification arrives. While a
+background worker runs you can keep using the session — including launching a
+second `/gt-apply` / `/gt-delegate` for an *independent* slice (sibling
+branch); the orchestrator serializes provisioning, the workers run
+concurrently, and the shared `gt sync` waits until every worktree is pruned.
+
+Foreground ("wait for it") blocks the orchestrator until the worker reports:
+the terminal accepts no input, and — because a subagent's tool calls render
+inline in the parent session — it can *look* like the orchestrator is doing
+the implementation itself. It is not; all work happens in the worker's
+worktree under the worker contract. Reserve foreground for deliberate
+validation runs where fail-fast matters more than keeping the session free.
+
 Variants:
 
-- `/gt-apply <change> in the background` — worker dispatched with
-  `run_in_background`; the orchestrator reconvenes when it reports.
+- `/gt-apply <change> and wait` — explicit foreground dispatch (see above).
 - `/gt-apply <change> --relay "<slice 1> / <slice 2>"` — split the change's
   task groups into a dependent stack; workers run sequentially via
   gt-delegate's relay variant.

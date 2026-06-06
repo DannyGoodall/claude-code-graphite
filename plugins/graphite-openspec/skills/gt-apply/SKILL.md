@@ -52,7 +52,16 @@ Invoke the `gt-delegate` skill (graphite plugin) with:
   travels with the PR.
 - **branch**: from step 2.
 
-gt-delegate runs the confirm → provision → dispatch → reconvene lifecycle.
+gt-delegate runs the confirm → provision → dispatch → reconvene lifecycle
+(background dispatch by default — the session stays free, and another
+`/gt-apply` or `/gt-delegate` can run a second independent slice concurrently).
+
+**Provisioning note (seed commit):** a freshly proposed change's
+`openspec/changes/<name>/` folder is typically still UNTRACKED in the primary
+checkout, so it will not exist in the worker's fresh worktree. Per
+gt-delegate's seeding rule, commit the change folder onto the branch before
+dispatch (e.g. `docs(openspec): add <change> change artifacts`) — the worker's
+ticked tasks.md then evolves from that commit and travels with the PR.
 
 ## 4. OpenSpec reconvene tail (after gt-delegate's step 5)
 

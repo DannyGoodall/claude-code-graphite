@@ -1,5 +1,5 @@
 {
   "name": "graphite-openspec",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenSpec binding for the graphite plugin's worker orchestration: /gt-apply runs an OpenSpec change's apply workflow on its own stacked branch via a single gt-stack-worker. Requires the graphite plugin and an OpenSpec-managed repo (openspec/ + opsx skills)."
 }

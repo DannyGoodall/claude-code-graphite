@@ -291,3 +291,11 @@ a restack physically cannot rewrite a branch checked out in another worktree:
 3. `gt sync` — resolve conflicts per `references/conflict-resolution.md`
 4. Optionally stitch siblings into a stack: `gt move --onto <branch>`
 5. `gt submit --stack --no-interactive`
+
+### Single-Worker Delegation
+
+For the common one-branch case — delegating a single workload (a skill
+invocation or slice spec) to one worker on one pre-provisioned stacked branch
+— use the `gt-delegate` skill, which packages this protocol's lifecycle for
+exactly one slice. Workflow bindings (e.g. OpenSpec's `/gt-apply` in the
+`graphite-openspec` plugin) layer on top of it.

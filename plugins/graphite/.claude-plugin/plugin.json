@@ -1,5 +1,5 @@
 {
   "name": "graphite",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Skill, hooks and agents for Graphite CLI stacked PRs: gt commands, stack planning, conflict resolution, multi-agent worktree orchestration"
 }

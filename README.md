@@ -28,7 +28,9 @@ each with a two-role contract (**orchestrator** in the primary checkout,
 | PreToolUse guard | `plugins/graphite/hooks/scripts/gt-guard.sh` + `hooks.json` | Deterministically blocks repo-wide `gt` verbs in worker worktrees, and blocks orchestrator restacks while agent worktrees are still attached (prune-before-restack) |
 | Multi-agent skill section | `plugins/graphite/skills/graphite/SKILL.md` | Roles, command-ownership matrix, topology rules (parallel ⇒ siblings off trunk), reconvene checklist |
 | Multi-agent protocol reference | `plugins/graphite/skills/graphite/references/multi-agent.md` | Full fan-out lifecycle (plan → provision → dispatch → work → reconvene), concurrency hazards table, agent plan manifest (`.git/gt-agent-plan.json`), relay pattern for dependent slices |
-| Worker subagent | `plugins/graphite/agents/gt-stack-worker.md` | A constrained `gt-stack-worker` agent type for fan-outs, with a structured JSON report the orchestrator consumes |
+| Worker subagent | `plugins/graphite/agents/gt-stack-worker.md` | A constrained `gt-stack-worker` agent type for fan-outs, with a structured JSON report the orchestrator consumes. Carries the Skill tool so a slice spec can name a workflow skill (e.g. an OpenSpec apply) for the worker to run |
+| Single-worker delegation skill | `plugins/graphite/skills/gt-delegate/SKILL.md` | `gt-delegate`: the fan-out protocol specialized to one workload → one branch → one worker → reconvene. Workflow-agnostic |
+| OpenSpec binding plugin | `plugins/graphite-openspec/` | `gt-apply`: applies an OpenSpec change on its own stacked branch via gt-delegate. Separate plugin so non-OpenSpec repos never see it |
 | Manual | [MANUAL.md](MANUAL.md) | End-to-end usage in all three modes, with claude CLI/Agent-tool parameters |
 
 The goal: advice in context (hooks), enforcement in tooling (guard), and a
@@ -52,6 +54,7 @@ claude plugin marketplace add /path/to/claude-code-graphite
 # Then install the plugins from it
 claude plugin install graphite@claude-code-graphite
 claude plugin install graphite-mcp@claude-code-graphite
+claude plugin install graphite-openspec@claude-code-graphite   # only for OpenSpec repos
 ```
 
 After pulling new changes into the clone, refresh with:

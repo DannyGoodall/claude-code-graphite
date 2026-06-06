@@ -18,6 +18,11 @@
       "name": "graphite-mcp",
       "source": "./plugins/graphite-mcp",
       "description": "MCP server integration for Graphite CLI (gt mcp)"
+    },
+    {
+      "name": "graphite-openspec",
+      "source": "./plugins/graphite-openspec",
+      "description": "OpenSpec binding for graphite worker orchestration: /gt-apply applies an OpenSpec change on its own stacked branch via a single gt-stack-worker. Enable only in repos that use OpenSpec; requires the graphite plugin."
     }
   ]
 }

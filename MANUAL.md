@@ -17,6 +17,7 @@ Modes 2 and 3 are governed by a role contract (**orchestrator** vs **worker**) t
 - [Mode 1: Single-agent](#mode-1-single-agent)
 - [Mode 2: Multi-synchronous](#mode-2-multi-synchronous)
 - [Mode 3: Multi-async (worktrees)](#mode-3-multi-async-worktrees)
+- [Orchestrating OpenSpec changes (gt-delegate / gt-apply)](#orchestrating-openspec-changes-gt-delegate--gt-apply)
 - [Claude Code parameters reference](#claude-code-parameters-reference)
 - [The guard hook (gt-guard.sh)](#the-guard-hook-gt-guardsh)
 - [Troubleshooting](#troubleshooting)
@@ -33,8 +34,10 @@ Modes 2 and 3 are governed by a role contract (**orchestrator** vs **worker**) t
 | Reference: multi-agent | `.../references/multi-agent.md` | Fan-out lifecycle, hazards, manifest, relay pattern |
 | SessionStart hook | `.../hooks/scripts/graphite-context.sh` | Injects role-aware context: **orchestrator** rules in the primary checkout, **worker** contract in a linked worktree |
 | PreToolUse guard | `.../hooks/scripts/gt-guard.sh` | Deterministically blocks role-violating `gt` commands (see [guard hook](#the-guard-hook-gt-guardsh)) |
-| Worker agent | `plugins/graphite/agents/gt-stack-worker.md` | A constrained subagent type for fan-outs, with a structured JSON report format |
+| Worker agent | `plugins/graphite/agents/gt-stack-worker.md` | A constrained subagent type for fan-outs, with a structured JSON report format. Carries the Skill tool so a slice spec can name a workflow skill for the worker to run |
+| Skill: gt-delegate | `plugins/graphite/skills/gt-delegate/SKILL.md` | Single-worker specialization of the fan-out protocol: one workload → one branch → one worker → reconvene. Workflow-agnostic |
 | MCP server | `plugins/graphite-mcp` (`gt mcp`) | Graphite operations as MCP tools |
+| Skill: gt-apply | `plugins/graphite-openspec/skills/gt-apply/SKILL.md` | OpenSpec binding over gt-delegate: applies an OpenSpec change on its own stacked branch. Separate plugin — enable only in OpenSpec repos |
 
 **Detection:** everything activates only in repos with `.git/.graphite_repo_config` (checked via `git rev-parse --git-common-dir`, so it works from linked worktrees and subdirectories too). In non-Graphite repos the plugin stays silent and standard git applies.
 
@@ -56,7 +59,8 @@ cd your-repo && gt init
 # Plugin (from this marketplace clone)
 claude plugin marketplace add <path-or-org/repo>
 claude plugin install graphite@claude-code-graphite
-claude plugin install graphite-mcp@claude-code-graphite   # optional, needs gt >= 1.6.7
+claude plugin install graphite-mcp@claude-code-graphite        # optional, needs gt >= 1.6.7
+claude plugin install graphite-openspec@claude-code-graphite   # optional, only for OpenSpec repos
 ```
 
 Verify: start `claude` inside the repo — the SessionStart hook should print the Graphite context block. Run `/plugin` to confirm both plugins are enabled.
@@ -246,6 +250,75 @@ If you try `gt sync` while worktrees are still attached, the guard blocks it and
 | Restacks rewrite refs repo-wide and fail on branches checked out elsewhere | Orchestrator-only restacks + prune-before-restack, both guard-enforced |
 | `gt create -am` / `gt modify -a` stage *everything* | One worktree per worker — no shared working directory |
 | Graphite's cache (`.git/.graphite_cache_persist`) is shared, last-write-wins | Orchestrator pre-creates all branches; workers stick to `git commit` + single-branch submit |
+
+---
+
+## Orchestrating OpenSpec changes (gt-delegate / gt-apply)
+
+A common shape of Mode 3 is *one* worker carrying out a structured workflow —
+typically applying an [OpenSpec](https://github.com/Fission-AI/OpenSpec)
+change proposal — on its own stacked branch. Two skills package this, split
+deliberately into a **mechanism** and a **binding**:
+
+| Layer | Where | Knows about |
+|-------|-------|-------------|
+| `gt-delegate` (mechanism) | `graphite` plugin | Worktrees, branches, the worker contract, reconvene order. Nothing about any workflow |
+| `gt-apply` (binding) | `graphite-openspec` plugin | OpenSpec change resolution, `/opsx:apply` as the worker's workload, `/opsx:verify` at reconvene. Nothing about git/gt choreography |
+
+The split keeps the workflows decoupled: if the OpenSpec workflow changes,
+only the binding changes; if the orchestration protocol changes, only the
+mechanism changes. Other workflow bindings (Linear, Jira, your own spec
+system) can layer on `gt-delegate` the same way.
+
+### How the worker runs a workflow skill
+
+`gt-stack-worker` carries the **Skill tool**, so a slice spec can say "invoke
+`/opsx:apply <change>`" instead of paraphrasing the workflow's steps. The
+worker then follows the workflow skill's own rules for the files it owns
+(task checklists, artifacts), while the worker contract + guard hook continue
+to police all git/gt behaviour. Apply progress (e.g. ticked `tasks.md`
+checkboxes) is committed on the worker's branch, so it travels with the PR.
+If the named skill isn't available in the worker's session, the worker stops
+and reports rather than hand-editing the workflow's files.
+
+### Usage
+
+```text
+you:    /gt-apply timetabling-strand-location-grouping
+claude: Plan: change timetabling-strand-location-grouping
+        → branch feat/strand-location-grouping
+        → worktree ../wt-strand-location-grouping (off main). Proceed?
+you:    yes
+claude: [gt sync; worktree add + gt track; manifest;
+         dispatch gt-stack-worker → worker invokes /opsx:apply, implements,
+         ticks tasks.md, commits, gt submit --no-interactive;
+         reconvene: prune worktree → gt sync → /opsx:verify]
+        → PR URL + verify outcome
+```
+
+Parameter inference (ask only when ambiguous): the change comes from the
+argument, else the conversation, else `openspec list --json`; the branch and
+worktree names are derived from the change name and surfaced in the
+confirmation step.
+
+Variants:
+
+- `/gt-apply <change> in the background` — worker dispatched with
+  `run_in_background`; the orchestrator reconvenes when it reports.
+- `/gt-apply <change> --relay "<slice 1> / <slice 2>"` — split the change's
+  task groups into a dependent stack; workers run sequentially via
+  gt-delegate's relay variant.
+- `/gt-delegate <skill-or-spec> [branch]` — the raw mechanism, for any other
+  single-worker delegation (no OpenSpec required).
+
+### Prerequisites
+
+- `graphite` plugin enabled (provides `gt-delegate` + `gt-stack-worker`).
+- `graphite-openspec` plugin enabled **in OpenSpec repos only** — it is a
+  separate marketplace plugin precisely so non-OpenSpec repos never see
+  `/gt-apply`.
+- The repo's OpenSpec skills (`opsx:*`) available in the session, since the
+  worker invokes them by name.
 
 ---
 

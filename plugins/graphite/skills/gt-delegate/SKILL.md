@@ -72,6 +72,11 @@ include:
 - the structured JSON report requirement (the agent definition carries the
   format).
 
+The worker contract (primary-checkout containment, explicit staging, command
+hygiene) is carried by the agent definition — do not restate it; include only
+the situational facts (resume state, where env files live, workload-specific
+test-harness notes).
+
 **Dispatch in the background by default** (`run_in_background: true`): the
 orchestrator returns control to the user immediately and reconvenes when the
 worker's completion notification arrives. While a background worker runs, the
@@ -104,8 +109,28 @@ contract.
 - Worker reports `blocked_on` → prune its worktree, relay the blocker to the
   user with the branch left intact for inspection. Never resolve cross-branch
   conflicts in the worker's name.
-- Worker died without a report → inspect the worktree before pruning; salvage
-  commits exist on the branch either way.
+- Worker died without a report (stall, watchdog kill, crash) →
+  **resume-in-place**:
+  1. Inspect before touching anything: `git -C <worktree> log --oneline
+     main..HEAD` (committed progress), `git -C <worktree> status --short`
+     (uncommitted work), and the workload's own progress record (e.g. a
+     ticked task checklist).
+  2. Do NOT prune. Dispatch a FRESH worker into the SAME worktree with a
+     resume brief: what is already committed, what sits uncommitted
+     ("claimed done but unverified — run the relevant tests FIRST, then
+     commit with explicit paths"), and what remains.
+  3. Atomic per-task-group commits + checklist discipline are what make
+     this loss-free: across repeated stalls, only since-last-commit work is
+     ever at risk.
+  4. Also check the PRIMARY checkout for collateral (stray branches,
+     unexpected checkout, staged files) — a confused worker may have
+     strayed; clean it up before continuing.
+- **Background dispatch stalls repeatedly** (e.g. the harness watchdog
+  reports "no progress" kills at unrelated phases, including immediately
+  after dispatch): suspect the session's background-agent transport, not
+  the worker or this skill. Fall back to FOREGROUND dispatch for the
+  resume — warn the user it blocks the session — and suggest retesting
+  background dispatch in a fresh session.
 
 ## Variants
 

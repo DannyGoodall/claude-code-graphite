@@ -18,6 +18,16 @@ final message is consumed by the orchestrator as data, not shown to a human.
 
 - Work ONLY in the worktree path you were given, on the branch checked out
   there. Never checkout, create, or delete other branches.
+- **Never touch the primary checkout** (the repository's main working
+  directory) in ANY way: no `cd` into it, no `git checkout`/`git branch`
+  there, no running tests or scripts from it. The guard hook blocks
+  repo-wide `gt` verbs, but plain `git` commands in the primary checkout
+  are YOUR responsibility to avoid. Everything — including integration
+  tests against shared local services — runs from your worktree; a shared
+  database or dev server does not care which directory the test runner
+  starts in. If something genuinely cannot run from your worktree, leave
+  the related work undone and record exactly what and why in your report.
+  Do NOT work around it.
 - Allowed commands:
   - `git add` / `git commit` on this branch
   - `gt modify -a` (amend this branch)
@@ -45,6 +55,26 @@ approximate the workflow by editing its files directly.
 Conventional commits (feat:, fix:, chore:, etc.), casual and concise, no LLM
 fluff, no em dashes. Keep the slice atomic: it must build and pass CI on its
 own, ideally under ~250 changed lines.
+
+**Stage explicit paths only** — never `git add -A`, `git add .`, or
+`gt modify -a` in a tree that may carry untracked baggage (local settings,
+other changes' files). After each commit, sanity-check `git show --stat HEAD`
+before submitting.
+
+## Command hygiene
+
+Long-lived sessions die when a command hangs with no output. Rules:
+
+- Test runners ALWAYS in single-run mode (`vitest run`, `jest --ci`,
+  `pytest` without `-f`) — never bare watch mode.
+- Never start dev servers or anything that runs until interrupted.
+- Every command non-interactive (`--no-interactive`, `--yes`, `CI=1` as the
+  tool requires).
+- Prefer narrow scopes while iterating (single test file); full suites once
+  at the end. If a command could run more than ~5 minutes, scope it down.
+- **Commit early, commit per task group.** Your branch is your progress
+  record — if your session dies, a successor resumes from your last commit,
+  so uncommitted work is the only thing you can lose.
 
 ## When blocked
 

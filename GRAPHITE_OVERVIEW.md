@@ -613,14 +613,7 @@ Things that bite people in their first week:
 
 ## Graphite and git worktrees: a forensic look
 
-[Git worktrees](https://git-scm.com/docs/git-worktree) let one repository
-have several working directories, each with its own checked-out branch.
-Combined with stacking they are how *concurrent* work happens — two humans,
-or one human and N agents, on the same repo at the same time. This section
-examines exactly what is shared, what Graphite documents, and where the sharp
-edges are. (Operating instructions — starting sessions, prep, delegation —
-live in [MANUAL.md → Git worktrees in depth](MANUAL.md#git-worktrees-in-depth);
-this is the evidence.)
+[Git worktrees](https://git-scm.com/docs/git-worktree) let one repository have several working directories, each with its own checked-out branch. Combined with stacking they are how *concurrent* work happens — two humans, or one human and N agents, on the same repo at the same time. This section examines exactly what is shared, what Graphite documents, and where the sharp edges are. (Operating instructions — starting sessions, prep, delegation — live in [MANUAL.md → Git worktrees in depth](MANUAL.md#git-worktrees-in-depth); this is the evidence.)
 
 ### What is shared and what is private
 
@@ -655,9 +648,7 @@ Forensically, the failure surface follows directly from this layout:
 
 From the [command reference](https://graphite.com/docs/command-reference), verbatim:
 
-> "Graphite fully supports multiple Git worktrees. Starting in `gt` version
-> `1.8.4`, Graphite does not modify branches checked out in another worktree
-> in most cases."
+> "Graphite fully supports multiple Git worktrees. Starting in `gt` version `1.8.4`, Graphite does not modify branches checked out in another worktree in most cases."
 
 The specific behaviours, each introduced in 1.8.4 unless noted:
 
@@ -672,51 +663,17 @@ The specific behaviours, each introduced in 1.8.4 unless noted:
 
 ### The skip-semantics hazard
 
-Read the `gt sync` line again: **skip, not fail.** For a human with two
-worktrees this is the right call — your in-progress feature isn't rebased
-underneath you; you restack it from its own worktree when ready. For an
-orchestrator reconciling many agent branches it is a silent trap: a sync
-"succeeds" while any branch checked out in a live worktree quietly stays on
-a stale parent. The stack is now *half-restacked with exit code 0*.
+Read the `gt sync` line again: **skip, not fail.** For a human with two worktrees this is the right call — your in-progress feature isn't rebased underneath you; you restack it from its own worktree when ready. For an orchestrator reconciling many agent branches it is a silent trap: a sync "succeeds" while any branch checked out in a live worktree quietly stays on a stale parent. The stack is now *half-restacked with exit code 0*.
 
-This is the evidence behind the plugin's **prune-before-restack rule** being
-stricter than gt's own behaviour: remove every agent worktree first, so every
-restack is total. The plugin's guard hook enforces it deterministically
-rather than leaving it to anyone's memory. (Pre-1.8.4, the community
-documented worse: ["there can be potential issues with work getting erased
-in other worktrees when using Graphite"](https://blog.matte.fyi/posts/git-worktrees-with-graphite/)
-— the skip semantics were Graphite's fix for *humans*; the prune rule is the
-remaining fix for *fleets*.)
+This is the evidence behind the plugin's **prune-before-restack rule** being stricter than gt's own behaviour: remove every agent worktree first, so every restack is total. The plugin's guard hook enforces it deterministically rather than leaving it to anyone's memory. (Pre-1.8.4, the community documented worse: ["there can be potential issues with work getting erased in other worktrees when using Graphite"](https://blog.matte.fyi/posts/git-worktrees-with-graphite/) — the skip semantics were Graphite's fix for *humans*; the prune rule is the remaining fix for *fleets*.)
 
 ### Three documented ways to combine gt and worktrees
 
-**1. Worktree-per-feature as a lifestyle (bare-repo layout).** The approach
-in [Git worktrees with Graphite](https://blog.matte.fyi/posts/git-worktrees-with-graphite/):
-clone bare into `.bare/`, point a `.git` file at it, and `git worktree add`
-a folder per branch — `main/`, `featA/`, … Each stack lives in its own
-folder; `gt track` adopts each new worktree's branch; `gt up`/`gt down`/
-`gt modify`/`gt submit` work normally *within* a worktree. Caution carried
-over from that write-up: be careful running `gt sync` with unstaged changes
-sitting in other worktrees. Good fit for humans who context-switch a lot;
-the per-worktree dependency installs are the tax.
+**1. Worktree-per-feature as a lifestyle (bare-repo layout).** The approach in [Git worktrees with Graphite](https://blog.matte.fyi/posts/git-worktrees-with-graphite/): clone bare into `.bare/`, point a `.git` file at it, and `git worktree add` a folder per branch — `main/`, `featA/`, … Each stack lives in its own folder; `gt track` adopts each new worktree's branch; `gt up`/`gt down`/ `gt modify`/`gt submit` work normally *within* a worktree. Caution carried over from that write-up: be careful running `gt sync` with unstaged changes sitting in other worktrees. Good fit for humans who context-switch a lot; the per-worktree dependency installs are the tax.
 
-**2. Ephemeral worktree-per-task (Claude Code native).** `claude --worktree
-<name>` creates `.claude/worktrees/<name>/` on branch `worktree-<name>`
-based on `origin/HEAD`, with `.worktreeinclude` copying selected gitignored
-files in, and automatic cleanup of unchanged worktrees on exit
-([docs](https://code.claude.com/docs/en/worktrees)). Graphite-specific
-caveat: the created branch is **untracked** by gt until someone runs
-`gt track`. Community practice with this pattern converges on 2–4 parallel
-sessions as the practical ceiling before coordination overhead wins
-([best practices](https://www.anthropic.com/engineering/claude-code-best-practices)).
+**2. Ephemeral worktree-per-task (Claude Code native).** `claude --worktree <name>` creates `.claude/worktrees/<name>/` on branch `worktree-<name>` based on `origin/HEAD`, with `.worktreeinclude` copying selected gitignored files in, and automatic cleanup of unchanged worktrees on exit ([docs](https://code.claude.com/docs/en/worktrees)). Graphite-specific caveat: the created branch is **untracked** by gt until someone runs `gt track`. Community practice with this pattern converges on 2–4 parallel sessions as the practical ceiling before coordination overhead wins ([best practices](https://www.anthropic.com/engineering/claude-code-best-practices)).
 
-**3. Orchestrated worktree-per-worker (this plugin).** The orchestrator
-pre-creates branch + worktree (`git worktree add ../wt-x -b feat/x main;
-gt track feat/x --parent main`), seeds inputs by commit, dispatches one
-constrained worker per worktree, and prunes before any restack. Topology is
-recorded in a manifest; roles are hook-enforced. This is layout 2's
-ephemerality with layout 1's explicit naming, plus the discipline neither
-needs for a single human.
+**3. Orchestrated worktree-per-worker (this plugin).** The orchestrator pre-creates branch + worktree (`git worktree add ../wt-x -b feat/x main; gt track feat/x --parent main`), seeds inputs by commit, dispatches one constrained worker per worktree, and prunes before any restack. Topology is recorded in a manifest; roles are hook-enforced. This is layout 2's ephemerality with layout 1's explicit naming, plus the discipline neither needs for a single human.
 
 | | Bare-repo lifestyle | Claude-native `--worktree` | Plugin protocol |
 |---|---|---|---|
@@ -728,18 +685,11 @@ needs for a single human.
 
 ### Worktree rules of thumb, evidence-based
 
-1. **Branch for serialized work, worktree for concurrent work.** A branch
-   isolates *review*; a worktree isolates *files and index*. The second
-   simultaneous actor is the trigger to reach for worktrees.
-2. **Seed by commit.** Fresh worktrees see only committed state — both git's
-   design and Anthropic's docs say so. Untracked inputs do not travel.
-3. **`gt log` before repo-wide operations.** It shows which branch is
-   checked out in which worktree — the skip-semantics victims, in advance.
-4. **Never trust a sync while worktrees are attached** (fleet context).
-   Prune first; then the restack means what it says.
-5. **One actor per checkout, ever.** Most "worktree problems" in the wild
-   are actually two-actors-one-index problems that worktrees would have
-   prevented.
+1. **Branch for serialized work, worktree for concurrent work.** A branch isolates *review*; a worktree isolates *files and index*. The second simultaneous actor is the trigger to reach for worktrees.
+2. **Seed by commit.** Fresh worktrees see only committed state — both git's design and Anthropic's docs say so. Untracked inputs do not travel.
+3. **`gt log` before repo-wide operations.** It shows which branch is checked out in which worktree — the skip-semantics victims, in advance.
+4. **Never trust a sync while worktrees are attached** (fleet context). Prune first; then the restack means what it says.
+5. **One actor per checkout, ever.** Most "worktree problems" in the wild are actually two-actors-one-index problems that worktrees would have prevented.
 
 ---
 

@@ -201,12 +201,7 @@ Agent(subagent_type: "gt-stack-worker",
                with validation + tests. Submit when green.")
 ```
 
-> **Important:** do NOT use the Agent tool's `isolation: "worktree"` option for
-> Graphite fan-outs. That creates a harness-managed worktree on an
-> auto-generated branch, outside the manifest and the pre-provisioned
-> topology. Point plain agents at the worktrees the orchestrator created —
-> naming and lifecycle stay under orchestrator control, which the
-> prune-before-restack rule depends on.
+> **Important:** do NOT use the Agent tool's `isolation: "worktree"` option for Graphite fan-outs. That creates a harness-managed worktree on an auto-generated branch, outside the manifest and the pre-provisioned topology. Point plain agents at the worktrees the orchestrator created — naming and lifecycle stay under orchestrator control, which the prune-before-restack rule depends on.
 
 Alternatively, dispatch workers as separate headless processes:
 
@@ -256,63 +251,32 @@ If you try `gt sync` while worktrees are still attached, the guard blocks it and
 
 ## Git worktrees in depth
 
-Everything in Mode 3 stands on git worktrees. This section is the operating
-detail: what they are, how Graphite and Claude Code each treat them, how to
-start sessions in them, the prep they need, and — for every workflow — what
-the *branch-only* equivalent looks like and when a plain branch is enough.
+Everything in Mode 3 stands on git worktrees. This section is the operating detail: what they are, how Graphite and Claude Code each treat them, how to start sessions in them, the prep they need, and — for every workflow — what the *branch-only* equivalent looks like and when a plain branch is enough.
 
 ### What a worktree is, and why this plugin is built on them
 
-A [git worktree](https://git-scm.com/docs/git-worktree) is a second working
-directory attached to the same repository: its own checked-out branch, its
-own index and file state, but one shared `.git` database (refs, objects,
-config — and Graphite's metadata). That sharing is both the power and the
-hazard:
+A [git worktree](https://git-scm.com/docs/git-worktree) is a second working directory attached to the same repository: its own checked-out branch, its own index and file state, but one shared `.git` database (refs, objects, config — and Graphite's metadata). That sharing is both the power and the hazard:
 
-- **Power:** a branch created or committed in one worktree is instantly
-  visible to all of them; nothing needs pushing/pulling between worktrees.
-- **Hazard:** anything that *rewrites refs* (restacks) or *reads shared
-  caches* (Graphite's `.git/.graphite_cache_persist`) affects every worktree
-  at once.
+- **Power:** a branch created or committed in one worktree is instantly visible to all of them; nothing needs pushing/pulling between worktrees.
+- **Hazard:** anything that *rewrites refs* (restacks) or *reads shared caches* (Graphite's `.git/.graphite_cache_persist`) affects every worktree at once.
 
-The plugin's two-role contract is a direct consequence: the **primary
-checkout** is the orchestrator (owns everything repo-wide), each **linked
-worktree** hosts exactly one worker (owns exactly its branch). Role detection
-is mechanical — a session whose `--git-dir` differs from `--git-common-dir`
-is in a linked worktree → worker — so simply *starting Claude in a worktree*
-is what makes it a worker; no configuration.
+The plugin's two-role contract is a direct consequence: the **primary checkout** is the orchestrator (owns everything repo-wide), each **linked worktree** hosts exactly one worker (owns exactly its branch). Role detection is mechanical — a session whose `--git-dir` differs from `--git-common-dir` is in a linked worktree → worker — so simply *starting Claude in a worktree* is what makes it a worker; no configuration.
 
 ### How Graphite itself treats worktrees (and where the plugin is stricter)
 
 Graphite's official position ([command reference](https://graphite.com/docs/command-reference)):
 
-> "Graphite fully supports multiple Git worktrees. Starting in `gt` version
-> `1.8.4`, Graphite does not modify branches checked out in another worktree
-> in most cases."
+> "Graphite fully supports multiple Git worktrees. Starting in `gt` version `1.8.4`, Graphite does not modify branches checked out in another worktree in most cases."
 
-Concretely, since 1.8.4: `gt sync`, `gt restack`, and `gt get` **skip**
-non-trunk branches checked out in another worktree; `gt modify --into`
-refuses to modify a branch checked out elsewhere; `gt undo` exits with an
-error rather than touching another worktree's branch; and `gt log` shows the
-worktree path next to each checked-out branch (useful orchestrator
-visibility).
+Concretely, since 1.8.4: `gt sync`, `gt restack`, and `gt get` **skip** non-trunk branches checked out in another worktree; `gt modify --into` refuses to modify a branch checked out elsewhere; `gt undo` exits with an error rather than touching another worktree's branch; and `gt log` shows the worktree path next to each checked-out branch (useful orchestrator visibility).
 
-**The forensic detail that matters for agent fleets:** "skip" means a
-restack *silently half-completes*. For a human juggling two worktrees that's
-a convenience — your other feature doesn't get yanked around underneath you;
-run `gt restack` from that worktree later. For an orchestrator reconciling
-five workers' branches it's a trap: `gt sync` reports success while some
-branches silently remain on stale parents. That is why the plugin's
-**prune-before-restack rule is stricter than gt's own behaviour** — the
-guard hook refuses orchestrator restacks while *any* agent worktree is
-attached, so every restack is total, never partial.
+**The forensic detail that matters for agent fleets:** "skip" means a restack *silently half-completes*. For a human juggling two worktrees that's a convenience — your other feature doesn't get yanked around underneath you; run `gt restack` from that worktree later. For an orchestrator reconciling five workers' branches it's a trap: `gt sync` reports success while some branches silently remain on stale parents. That is why the plugin's **prune-before-restack rule is stricter than gt's own behaviour** — the guard hook refuses orchestrator restacks while *any* agent worktree is attached, so every restack is total, never partial.
 
 ### Starting Claude in a worktree
 
 Three ways, in order of how orchestrated the work is:
 
-**1. Plugin protocol (orchestrated work — fan-outs, gt-delegate, gt-apply).**
-The orchestrator provisions, then the session (or subagent) starts inside:
+**1. Plugin protocol (orchestrated work — fan-outs, gt-delegate, gt-apply).** The orchestrator provisions, then the session (or subagent) starts inside:
 
 ```bash
 # orchestrator, primary checkout:
@@ -323,9 +287,7 @@ gt track feat/avatar-api --parent main
 cd ../wt-avatar-api && claude
 ```
 
-The SessionStart hook detects the linked worktree and injects the worker
-contract automatically. For subagent workers, `gt-delegate` does the
-provisioning and dispatching for you.
+The SessionStart hook detects the linked worktree and injects the worker contract automatically. For subagent workers, `gt-delegate` does the provisioning and dispatching for you.
 
 **2. Claude Code's native flag (ad-hoc parallel sessions).**
 
@@ -333,85 +295,39 @@ provisioning and dispatching for you.
 claude --worktree feature-auth       # or -w
 ```
 
-This creates `.claude/worktrees/feature-auth/` on a new branch named
-`worktree-feature-auth`, based on **`origin/HEAD`** (a clean tree matching
-the remote — set `worktree.baseRef: "head"` in settings to base on your
-local HEAD instead). Three Graphite-repo caveats:
+This creates `.claude/worktrees/feature-auth/` on a new branch named `worktree-feature-auth`, based on **`origin/HEAD`** (a clean tree matching the remote — set `worktree.baseRef: "head"` in settings to base on your local HEAD instead). Three Graphite-repo caveats:
 
-- The branch is **not gt-tracked**. Before any `gt submit` from that
-  session, run `gt track worktree-feature-auth --parent main` (fine from the
-  worker side — `gt track` on your own branch mutates only that branch's
-  metadata ref).
-- Branch and directory names won't match an orchestrator's manifest — use
-  this for independent ad-hoc sessions, not as a substitute for protocol
-  provisioning in a fan-out.
-- Run `claude` once normally in the repo first (workspace trust must be
-  accepted before `--worktree` works), and add `.claude/worktrees/` to
-  `.gitignore`.
+- The branch is **not gt-tracked**. Before any `gt submit` from that session, run `gt track worktree-feature-auth --parent main` (fine from the worker side — `gt track` on your own branch mutates only that branch's metadata ref).
+- Branch and directory names won't match an orchestrator's manifest — use this for independent ad-hoc sessions, not as a substitute for protocol provisioning in a fan-out.
+- Run `claude` once normally in the repo first (workspace trust must be accepted before `--worktree` works), and add `.claude/worktrees/` to `.gitignore`.
 
-**3. Mid-session / harness-managed.** Asking Claude to "work in a worktree"
-(the `EnterWorktree` tool) or giving a subagent `isolation: worktree` creates
-harness-managed worktrees on auto-generated branches. As noted in Mode 3: do
-NOT use these for Graphite fan-outs — they live outside the manifest and the
-pre-provisioned topology. They're fine for non-Graphite isolation jobs.
+**3. Mid-session / harness-managed.** Asking Claude to "work in a worktree" (the `EnterWorktree` tool) or giving a subagent `isolation: worktree` creates harness-managed worktrees on auto-generated branches. As noted in Mode 3: do NOT use these for Graphite fan-outs — they live outside the manifest and the pre-provisioned topology. They're fine for non-Graphite isolation jobs.
 
-**The branch-only equivalent, and the difference.** Without a worktree, "new
-line of work" is just `gt create -am "..."` in the primary checkout (Mode 1).
-A branch gives you *review* isolation (its own PR, its own diff) but not
-*working-tree* isolation: one checkout can have only one branch checked out,
-one index, one set of files. Two actors in one checkout collide on staging
-(`-a` sweeps the other's edits) and on file state. Rule of thumb: **a branch
-is enough while work is serialized; the moment two sessions/agents must run
-concurrently, each needs its own worktree.**
+**The branch-only equivalent, and the difference.** Without a worktree, "new line of work" is just `gt create -am "..."` in the primary checkout (Mode 1). A branch gives you *review* isolation (its own PR, its own diff) but not *working-tree* isolation: one checkout can have only one branch checked out, one index, one set of files. Two actors in one checkout collide on staging (`-a` sweeps the other's edits) and on file state. Rule of thumb: **a branch is enough while work is serialized; the moment two sessions/agents must run concurrently, each needs its own worktree.**
 
 ### Prep work before a worktree session starts
 
-A fresh worktree is a *clean checkout of the branch* — nothing more. The
-five things that bite, in the order they bite:
+A fresh worktree is a *clean checkout of the branch* — nothing more. The five things that bite, in the order they bite:
 
-1. **Branch provisioning + tracking** — protocol worktrees get this from the
-   orchestrator (`git worktree add -b` + `gt track`); native `--worktree`
-   branches need `gt track` before they can submit.
-2. **Seed commit** — untracked/uncommitted files in the primary checkout do
-   NOT exist in the new worktree. Anthropic's own docs flag this: *"If your
-   main branch has uncommitted changes when you launch a worktree session,
-   those changes won't be visible in the new worktree; commit or stash your
-   changes before launching."* For delegated workloads, commit the inputs
-   onto the branch before dispatch (gt-delegate's seeding rule).
-3. **Gitignored files** (`.env`, `.env.local`, secrets) — never checked out
-   anywhere. Two mechanisms:
-   - A **`.worktreeinclude`** file at the repo root (gitignore syntax) makes
-     Claude Code copy matching gitignored files into every worktree it
-     creates (`--worktree`, subagent isolation, desktop sessions):
+1. **Branch provisioning + tracking** — protocol worktrees get this from the orchestrator (`git worktree add -b` + `gt track`); native `--worktree` branches need `gt track` before they can submit.
+2. **Seed commit** — untracked/uncommitted files in the primary checkout do NOT exist in the new worktree. Anthropic's own docs flag this: *"If your main branch has uncommitted changes when you launch a worktree session, those changes won't be visible in the new worktree; commit or stash your changes before launching."* For delegated workloads, commit the inputs onto the branch before dispatch (gt-delegate's seeding rule).
+3. **Gitignored files** (`.env`, `.env.local`, secrets) — never checked out anywhere. Two mechanisms:
+   - A **`.worktreeinclude`** file at the repo root (gitignore syntax) makes Claude Code copy matching gitignored files into every worktree it creates (`--worktree`, subagent isolation, desktop sessions):
      ```text
      .env
      .env.local
      ```
-   - For **manually-added** worktrees (the protocol path), copy by hand or
-     in the dispatch brief: `cp <primary>/.env.local <worktree>/` — it stays
-     gitignored there too.
-4. **Dependencies** — `node_modules`, virtualenvs etc. are per-directory.
-   Budget a `bun install` / `npm ci` / `uv sync` as the worker's first act.
-5. **Permissions** — the repo's `.claude/settings.json` allowlist is tracked,
-   so it's present in the worktree automatically; keep the worker-relevant
-   allowlist there (see [parameters reference](#claude-code-parameters-reference))
-   so headless workers don't stall on prompts.
+   - For **manually-added** worktrees (the protocol path), copy by hand or in the dispatch brief: `cp <primary>/.env.local <worktree>/` — it stays gitignored there too.
+4. **Dependencies** — `node_modules`, virtualenvs etc. are per-directory. Budget a `bun install` / `npm ci` / `uv sync` as the worker's first act.
+5. **Permissions** — the repo's `.claude/settings.json` allowlist is tracked, so it's present in the worktree automatically; keep the worker-relevant allowlist there (see [parameters reference](#claude-code-parameters-reference)) so headless workers don't stall on prompts.
 
-**Branch-only difference:** none of this exists. The primary checkout already
-has your env files, dependencies, and uncommitted context — that convenience
-is exactly what you trade away for concurrency.
+**Branch-only difference:** none of this exists. The primary checkout already has your env files, dependencies, and uncommitted context — that convenience is exactly what you trade away for concurrency.
 
 ### Delegating tasks in a worktree
 
-**Packaged:** `/gt-delegate <workload> [branch]` does the whole single-worker
-lifecycle — provision, seed, manifest, dispatch a `gt-stack-worker`
-(background by default), reconvene with prune-before-restack. The workload is
-a skill invocation (`/opsx:apply my-change`) or a plain slice spec.
+**Packaged:** `/gt-delegate <workload> [branch]` does the whole single-worker lifecycle — provision, seed, manifest, dispatch a `gt-stack-worker` (background by default), reconvene with prune-before-restack. The workload is a skill invocation (`/opsx:apply my-change`) or a plain slice spec.
 
-**Manual (interactive worker):** provision per the protocol, then open a
-second terminal, `cd ../wt-<slice> && claude`, and paste the slice spec. The
-hooks do the rest — you are now two humans-worth of sessions on one repo,
-safely.
+**Manual (interactive worker):** provision per the protocol, then open a second terminal, `cd ../wt-<slice> && claude`, and paste the slice spec. The hooks do the rest — you are now two humans-worth of sessions on one repo, safely.
 
 **Manual (headless worker):**
 
@@ -421,49 +337,24 @@ commit, submit with gt submit --no-interactive. Report JSON." \
   --permission-mode acceptEdits
 ```
 
-**Branch-only equivalent:** Mode 2a — sequential subagents in the primary
-checkout, one at a time, each doing `gt create -am` for its PR. Differences:
-strictly serialized (safe in one checkout only because nobody else has
-in-flight edits); no provisioning or prune ceremony; and `-a` staging is
-acceptable again. Use it when the slices are dependent anyway (a stack is an
-ordering — Mode 3's parallelism only ever applies to *independent* siblings).
+**Branch-only equivalent:** Mode 2a — sequential subagents in the primary checkout, one at a time, each doing `gt create -am` for its PR. Differences: strictly serialized (safe in one checkout only because nobody else has in-flight edits); no provisioning or prune ceremony; and `-a` staging is acceptable again. Use it when the slices are dependent anyway (a stack is an ordering — Mode 3's parallelism only ever applies to *independent* siblings).
 
 ### Using gt-apply with worktrees
 
-`/gt-apply <change>` is invoked **from the orchestrator** — the primary
-checkout. It does the worktree work itself; you never pre-create anything:
+`/gt-apply <change>` is invoked **from the orchestrator** — the primary checkout. It does the worktree work itself; you never pre-create anything:
 
 1. Validates the change, derives `feat/<slug>`, confirms the plan.
-2. Provisions branch + worktree, **seed-commits the change artifacts**
-   (`openspec/changes/<change>/` is typically still untracked right after
-   proposing — without the seed commit the worker's worktree wouldn't
-   contain the spec it's applying).
-3. Dispatches one `gt-stack-worker` into the worktree; the worker invokes
-   `/opsx:apply` there, ticks `tasks.md` via that skill, commits with
-   explicit paths, submits its own branch.
-4. Reconvenes: prune → `gt sync` → `/opsx:verify` in the primary checkout →
-   tracker update → PR link.
+2. Provisions branch + worktree, **seed-commits the change artifacts** (`openspec/changes/<change>/` is typically still untracked right after proposing — without the seed commit the worker's worktree wouldn't contain the spec it's applying).
+3. Dispatches one `gt-stack-worker` into the worktree; the worker invokes `/opsx:apply` there, ticks `tasks.md` via that skill, commits with explicit paths, submits its own branch.
+4. Reconvenes: prune → `gt sync` → `/opsx:verify` in the primary checkout → tracker update → PR link.
 
-If you are *inside a worktree session* (worker role) and invoke `/gt-apply`,
-provisioning will be refused — branch pre-creation and manifest writes are
-orchestrator-owned, and the guard enforces the split. By design: run it from
-the primary session.
+If you are *inside a worktree session* (worker role) and invoke `/gt-apply`, provisioning will be refused — branch pre-creation and manifest writes are orchestrator-owned, and the guard enforces the split. By design: run it from the primary session.
 
-**Branch-only equivalent:** apply the change on a stacked branch in the
-primary checkout, no worktree at all — `gt create` the branch, run
-`/opsx:apply` directly in your own session, `gt submit` when green
-(single-agent Mode 1). Differences: your session is occupied for the whole
-apply (you can't propose or review anything else meanwhile); no second
-change can apply concurrently; but there is zero ceremony — no seed commit
-(your working tree already has the artifacts), no env copying, no prune.
-For one small change with you watching, branch-only is often the better
-deal; `/gt-apply` earns its ceremony when the apply is long, when you want
-the session back, or when two changes should apply side by side.
+**Branch-only equivalent:** apply the change on a stacked branch in the primary checkout, no worktree at all — `gt create` the branch, run `/opsx:apply` directly in your own session, `gt submit` when green (single-agent Mode 1). Differences: your session is occupied for the whole apply (you can't propose or review anything else meanwhile); no second change can apply concurrently; but there is zero ceremony — no seed commit (your working tree already has the artifacts), no env copying, no prune. For one small change with you watching, branch-only is often the better deal; `/gt-apply` earns its ceremony when the apply is long, when you want the session back, or when two changes should apply side by side.
 
 ### Case study: propose in the primary checkout, apply in a worktree
 
-A condensed real workflow (an OpenSpec change on a SvelteKit/Supabase repo),
-exactly as the skills run it:
+A condensed real workflow (an OpenSpec change on a SvelteKit/Supabase repo), exactly as the skills run it:
 
 ```text
 # ── 1. Propose (primary checkout, on main) ─────────────────────────────
@@ -507,24 +398,12 @@ claude: [gt merge … gt checkout main; gt sync; gt delete feat/strand-grouping]
 
 Field notes from running exactly this, twice:
 
-- The **seed commit is not optional** — both real runs had the change folder
-  untracked at apply time; a worktree without the seed commit hands the
-  worker nothing to apply.
-- The guard blocking `gt sync` *inside a compound command that also removes
-  the worktree* is correct behaviour: it evaluates before anything executes.
-  Prune and sync in separate commands.
-- After the PR exists, amendments and archive are plain **single-agent
-  branch work in the primary checkout** — the worktree's job ended at
-  reconvene. Worktrees are for the *concurrent* phase only.
-- If a background worker stalls, nothing is lost: per-task-group commits +
-  the ticked checklist mean a fresh worker resumes in the same worktree from
-  the last commit (see gt-delegate's failure handling).
+- The **seed commit is not optional** — both real runs had the change folder untracked at apply time; a worktree without the seed commit hands the worker nothing to apply.
+- The guard blocking `gt sync` *inside a compound command that also removes the worktree* is correct behaviour: it evaluates before anything executes. Prune and sync in separate commands.
+- After the PR exists, amendments and archive are plain **single-agent branch work in the primary checkout** — the worktree's job ended at reconvene. Worktrees are for the *concurrent* phase only.
+- If a background worker stalls, nothing is lost: per-task-group commits + the ticked checklist mean a fresh worker resumes in the same worktree from the last commit (see gt-delegate's failure handling).
 
-**The same case study without a worktree** collapses steps 2–3 into: `gt
-create -am` an empty seed on a new branch (or just commit the artifacts),
-run `/opsx:apply` in your own session, `gt submit` — and your terminal is
-busy until it's done. Identical PR shape at the end; the difference is
-purely who waits.
+**The same case study without a worktree** collapses steps 2–3 into: `gt create -am` an empty seed on a new branch (or just commit the artifacts), run `/opsx:apply` in your own session, `gt submit` — and your terminal is busy until it's done. Identical PR shape at the end; the difference is purely who waits.
 
 ### Sources
 
@@ -539,31 +418,18 @@ purely who waits.
 
 ## Orchestrating OpenSpec changes (gt-delegate / gt-apply)
 
-A common shape of Mode 3 is *one* worker carrying out a structured workflow —
-typically applying an [OpenSpec](https://github.com/Fission-AI/OpenSpec)
-change proposal — on its own stacked branch. Two skills package this, split
-deliberately into a **mechanism** and a **binding**:
+A common shape of Mode 3 is *one* worker carrying out a structured workflow — typically applying an [OpenSpec](https://github.com/Fission-AI/OpenSpec) change proposal — on its own stacked branch. Two skills package this, split deliberately into a **mechanism** and a **binding**:
 
 | Layer | Where | Knows about |
 |-------|-------|-------------|
 | `gt-delegate` (mechanism) | `graphite` plugin | Worktrees, branches, the worker contract, reconvene order. Nothing about any workflow |
 | `gt-apply` (binding) | `graphite-openspec` plugin | OpenSpec change resolution, `/opsx:apply` as the worker's workload, `/opsx:verify` at reconvene. Nothing about git/gt choreography |
 
-The split keeps the workflows decoupled: if the OpenSpec workflow changes,
-only the binding changes; if the orchestration protocol changes, only the
-mechanism changes. Other workflow bindings (Linear, Jira, your own spec
-system) can layer on `gt-delegate` the same way.
+The split keeps the workflows decoupled: if the OpenSpec workflow changes, only the binding changes; if the orchestration protocol changes, only the mechanism changes. Other workflow bindings (Linear, Jira, your own spec system) can layer on `gt-delegate` the same way.
 
 ### How the worker runs a workflow skill
 
-`gt-stack-worker` carries the **Skill tool**, so a slice spec can say "invoke
-`/opsx:apply <change>`" instead of paraphrasing the workflow's steps. The
-worker then follows the workflow skill's own rules for the files it owns
-(task checklists, artifacts), while the worker contract + guard hook continue
-to police all git/gt behaviour. Apply progress (e.g. ticked `tasks.md`
-checkboxes) is committed on the worker's branch, so it travels with the PR.
-If the named skill isn't available in the worker's session, the worker stops
-and reports rather than hand-editing the workflow's files.
+`gt-stack-worker` carries the **Skill tool**, so a slice spec can say "invoke `/opsx:apply <change>`" instead of paraphrasing the workflow's steps. The worker then follows the workflow skill's own rules for the files it owns (task checklists, artifacts), while the worker contract + guard hook continue to police all git/gt behaviour. Apply progress (e.g. ticked `tasks.md` checkboxes) is committed on the worker's branch, so it travels with the PR. If the named skill isn't available in the worker's session, the worker stops and reports rather than hand-editing the workflow's files.
 
 ### Usage
 
@@ -580,45 +446,25 @@ claude: [gt sync; worktree add + gt track; manifest;
         → PR URL + verify outcome
 ```
 
-Parameter inference (ask only when ambiguous): the change comes from the
-argument, else the conversation, else `openspec list --json`; the branch and
-worktree names are derived from the change name and surfaced in the
-confirmation step.
+Parameter inference (ask only when ambiguous): the change comes from the argument, else the conversation, else `openspec list --json`; the branch and worktree names are derived from the change name and surfaced in the confirmation step.
 
 ### Foreground vs background dispatch
 
-Background is the **default**: the worker is dispatched with
-`run_in_background`, the orchestrator session returns control immediately, and
-reconvene happens when the worker's completion notification arrives. While a
-background worker runs you can keep using the session — including launching a
-second `/gt-apply` / `/gt-delegate` for an *independent* slice (sibling
-branch); the orchestrator serializes provisioning, the workers run
-concurrently, and the shared `gt sync` waits until every worktree is pruned.
+Background is the **default**: the worker is dispatched with `run_in_background`, the orchestrator session returns control immediately, and reconvene happens when the worker's completion notification arrives. While a background worker runs you can keep using the session — including launching a second `/gt-apply` / `/gt-delegate` for an *independent* slice (sibling branch); the orchestrator serializes provisioning, the workers run concurrently, and the shared `gt sync` waits until every worktree is pruned.
 
-Foreground ("wait for it") blocks the orchestrator until the worker reports:
-the terminal accepts no input, and — because a subagent's tool calls render
-inline in the parent session — it can *look* like the orchestrator is doing
-the implementation itself. It is not; all work happens in the worker's
-worktree under the worker contract. Reserve foreground for deliberate
-validation runs where fail-fast matters more than keeping the session free.
+Foreground ("wait for it") blocks the orchestrator until the worker reports: the terminal accepts no input, and — because a subagent's tool calls render inline in the parent session — it can *look* like the orchestrator is doing the implementation itself. It is not; all work happens in the worker's worktree under the worker contract. Reserve foreground for deliberate validation runs where fail-fast matters more than keeping the session free.
 
 Variants:
 
 - `/gt-apply <change> and wait` — explicit foreground dispatch (see above).
-- `/gt-apply <change> --relay "<slice 1> / <slice 2>"` — split the change's
-  task groups into a dependent stack; workers run sequentially via
-  gt-delegate's relay variant.
-- `/gt-delegate <skill-or-spec> [branch]` — the raw mechanism, for any other
-  single-worker delegation (no OpenSpec required).
+- `/gt-apply <change> --relay "<slice 1> / <slice 2>"` — split the change's task groups into a dependent stack; workers run sequentially via gt-delegate's relay variant.
+- `/gt-delegate <skill-or-spec> [branch]` — the raw mechanism, for any other single-worker delegation (no OpenSpec required).
 
 ### Prerequisites
 
 - `graphite` plugin enabled (provides `gt-delegate` + `gt-stack-worker`).
-- `graphite-openspec` plugin enabled **in OpenSpec repos only** — it is a
-  separate marketplace plugin precisely so non-OpenSpec repos never see
-  `/gt-apply`.
-- The repo's OpenSpec skills (`opsx:*`) available in the session, since the
-  worker invokes them by name.
+- `graphite-openspec` plugin enabled **in OpenSpec repos only** — it is a separate marketplace plugin precisely so non-OpenSpec repos never see `/gt-apply`.
+- The repo's OpenSpec skills (`opsx:*`) available in the session, since the worker invokes them by name.
 
 ---
 
